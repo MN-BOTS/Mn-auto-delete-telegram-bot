@@ -115,6 +115,5 @@ or open:
 - Default mode is disabled for every chat, so newly added chats are safe.
 - Auto-delete timers above 1 hour are rejected.
 - Telegram limits are respected through FloodWait sleeps.
-- Broadcast uses `forward`, not `copy`, as requested.
 - Blocked/deleted PM users are removed from the `users` collection during broadcast.
 - This project keeps original credits for **GitHub.com/mntgxo** and the source repository.
