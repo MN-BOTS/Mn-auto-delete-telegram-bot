@@ -5,6 +5,7 @@ import os
 
 class BOT:
     TOKEN = os.environ.get("TOKEN", "")
+    USERNAME = ""
 
 class API:
     HASH = os.environ.get("API_HASH", "")
@@ -16,6 +17,16 @@ class OWNER:
 class WEB:
     PORT = int(os.environ.get("PORT", 8000))
 
-class CHATS:
-    IDS = list(map(int, os.environ.get("CHATS", "").split())) if os.environ.get("CHATS") else []
-    DELETE_DELAY = int(os.environ.get("DELETE_DELAY", "5")) 
+class DATABASE:
+    URI = os.environ.get("MONGO_URI", os.environ.get("DATABASE_URI", "mongodb://localhost:27017"))
+    NAME = os.environ.get("DATABASE_NAME", "mn_auto_delete")
+
+class BROADCAST:
+    SLEEP = float(os.environ.get("BROADCAST_SLEEP", "0.05"))
+
+class NOTICE:
+    INTERVAL = int(os.environ.get("NOTICE_INTERVAL", "3600"))
+    TEXT = os.environ.get(
+        "NOTICE_TEXT",
+        "🧹 MN Auto Delete is active. Use /settings to manage auto-delete. Credits: GitHub.com/mntgxo",
+    )

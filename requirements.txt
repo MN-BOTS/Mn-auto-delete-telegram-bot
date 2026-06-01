@@ -2,3 +2,5 @@ pyrotgfork
 python-dotenv
 Flask
 
+pymongo
+tgcrypto
