@@ -1,10 +1,19 @@
+"""MongoDB persistence layer. Public function names kept compatible with plugins."""
 from datetime import datetime, timezone
-from pymongo import MongoClient, ASCENDING
+
+from pymongo import ASCENDING, MongoClient
 from config import DATABASE
 
-_client = MongoClient(DATABASE.URI)
+_client = MongoClient(
+    DATABASE.URI,
+    appname="MN-Auto-Delete",
+    maxPoolSize=50,
+    minPoolSize=1,
+    serverSelectionTimeoutMS=10000,
+    connectTimeoutMS=10000,
+    retryWrites=True,
+)
 db = _client[DATABASE.NAME]
-
 chats = db.chats
 messages = db.messages
 users = db.users
@@ -15,9 +24,13 @@ broadcasts = db.broadcasts
 def init_db():
     chats.create_index([("enabled", ASCENDING)])
     chats.create_index([("type", ASCENDING)])
-    messages.create_index([("delete_at", ASCENDING)])
-    messages.create_index([("chat_id", ASCENDING), ("message_id", ASCENDING)], unique=True)
+    # Matches pending_messages() filtering and ordering.
+    messages.create_index([("status", ASCENDING), ("delete_at", ASCENDING)])
+    messages.create_index(
+        [("chat_id", ASCENDING), ("message_id", ASCENDING)], unique=True
+    )
     users.create_index([("blocked", ASCENDING)])
+    # Keep the existing title index if present; remove only the old legacy chat_id index.
     if "chat_id_1" in fsubs.index_information():
         fsubs.drop_index("chat_id_1")
     fsubs.create_index([("title", ASCENDING)])
@@ -38,18 +51,16 @@ def normalize_dt(value):
 def upsert_user(user):
     if not user:
         return
+    now = now_utc()
     users.update_one(
         {"_id": user.id},
-        {
-            "$set": {
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "username": user.username,
-                "blocked": False,
-                "last_seen": now_utc(),
-            },
-            "$setOnInsert": {"created_at": now_utc()},
-        },
+        {"$set": {
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "username": user.username,
+            "blocked": False,
+            "last_seen": now,
+        }, "$setOnInsert": {"created_at": now}},
         upsert=True,
     )
 
@@ -69,28 +80,28 @@ def remove_user(user_id):
 def save_chat(chat, user_id=None):
     if not chat:
         return
+    now = now_utc()
     chats.update_one(
         {"_id": chat.id},
-        {
-            "$set": {
-                "title": getattr(chat, "title", None) or getattr(chat, "first_name", None),
-                "type": str(chat.type),
-                "username": getattr(chat, "username", None),
-                "updated_at": now_utc(),
-                "updated_by": user_id,
-            },
-            "$setOnInsert": {
-                "enabled": False,
-                "delete_delay": 0,
-                "created_at": now_utc(),
-            },
-        },
+        {"$set": {
+            "title": getattr(chat, "title", None) or getattr(chat, "first_name", None),
+            "type": str(chat.type),
+            "username": getattr(chat, "username", None),
+            "updated_at": now,
+            "updated_by": user_id,
+        }, "$setOnInsert": {
+            "enabled": False,
+            "delete_delay": 0,
+            "created_at": now,
+        }},
         upsert=True,
     )
 
 
 def get_chat_settings(chat_id):
-    return chats.find_one({"_id": int(chat_id)}) or {"_id": int(chat_id), "enabled": False, "delete_delay": 0}
+    return chats.find_one({"_id": int(chat_id)}) or {
+        "_id": int(chat_id), "enabled": False, "delete_delay": 0
+    }
 
 
 def set_chat_settings(chat, user_id, *, enabled=None, delete_delay=None):
@@ -105,18 +116,16 @@ def set_chat_settings(chat, user_id, *, enabled=None, delete_delay=None):
 
 
 def save_scheduled_message(chat_id, message_id, delete_at):
+    now = now_utc()
     messages.update_one(
         {"chat_id": int(chat_id), "message_id": int(message_id)},
-        {
-            "$set": {
-                "chat_id": int(chat_id),
-                "message_id": int(message_id),
-                "delete_at": delete_at,
-                "status": "pending",
-                "updated_at": now_utc(),
-            },
-            "$setOnInsert": {"created_at": now_utc()},
-        },
+        {"$set": {
+            "chat_id": int(chat_id),
+            "message_id": int(message_id),
+            "delete_at": delete_at,
+            "status": "pending",
+            "updated_at": now,
+        }, "$setOnInsert": {"created_at": now}},
         upsert=True,
     )
 
@@ -129,21 +138,21 @@ def finish_scheduled_message(chat_id, message_id, status="deleted", error=None):
 
 
 def pending_messages(limit=500):
-    return list(messages.find({"status": "pending"}).sort("delete_at", ASCENDING).limit(limit))
+    return list(
+        messages.find({"status": "pending"})
+        .sort("delete_at", ASCENDING)
+        .limit(int(limit))
+    )
 
 
 def add_fsub(chat_id, title=None, username=None, invite_link=None):
+    now = now_utc()
     fsubs.update_one(
         {"_id": int(chat_id)},
-        {
-            "$set": {
-                "title": title,
-                "username": username,
-                "invite_link": invite_link,
-                "updated_at": now_utc(),
-            },
-            "$setOnInsert": {"created_at": now_utc()},
-        },
+        {"$set": {
+            "title": title, "username": username, "invite_link": invite_link,
+            "updated_at": now,
+        }, "$setOnInsert": {"created_at": now}},
         upsert=True,
     )
 
@@ -168,5 +177,11 @@ def save_notice_message(chat_id, message_id):
 
 
 def clear_notice_message(chat_id, error=None):
-    payload = {"last_notice_message_id": None, "last_notice_error": error, "last_notice_at": now_utc()}
-    chats.update_one({"_id": int(chat_id)}, {"$set": payload})
+    chats.update_one(
+        {"_id": int(chat_id)},
+        {"$set": {
+            "last_notice_message_id": None,
+            "last_notice_error": error,
+            "last_notice_at": now_utc(),
+        }},
+    )
