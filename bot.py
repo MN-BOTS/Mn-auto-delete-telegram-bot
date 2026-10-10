@@ -59,9 +59,10 @@ class MN_Bot(Client):
         self._notice_task = None
         self._stopping = False
 
-    async def start(self):
+    async def start(self, *args, **kwargs):
         database.init_db()
-        await super().start()
+        # Kurigram Client.run() passes use_qr and except_ids to start().
+        await super().start(*args, **kwargs)
         me = await self.get_me()
         BOT.USERNAME = f"@{me.username}"
         self.mention = me.mention
