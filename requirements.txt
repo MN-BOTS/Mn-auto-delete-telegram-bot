@@ -1,6 +1,5 @@
-pyrotgfork
+kurigram[fast]
 python-dotenv
 Flask
-
 pymongo
 tgcrypto
