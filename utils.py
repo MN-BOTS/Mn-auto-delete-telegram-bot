@@ -1,16 +1,8 @@
 import asyncio
 from pyrogram.errors import (
-    FloodWait,
-    UserIsBlocked,
-    InputUserDeactivated,
-    PeerIdInvalid,
-    ChatWriteForbidden,
-    ChannelPrivate,
-    ChatAdminRequired,
-    MessageDeleteForbidden,
-    MessageIdInvalid,
-    MessageNotModified,
-    QueryIdInvalid,
+    FloodWait, UserIsBlocked, InputUserDeactivated, PeerIdInvalid,
+    ChatWriteForbidden, ChannelPrivate, ChatAdminRequired,
+    MessageDeleteForbidden, MessageIdInvalid, MessageNotModified, QueryIdInvalid,
 )
 from pyrogram.enums import ChatMemberStatus
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -63,19 +55,30 @@ async def sleep_flood(seconds):
     await asyncio.sleep(int(seconds) + 1)
 
 
+async def _finish_delete(chat_id, message_id, status, error=None):
+    # PyMongo is synchronous; keep it off the event loop.
+    try:
+        await asyncio.to_thread(
+            database.finish_scheduled_message, chat_id, message_id, status, error
+        )
+    except Exception:
+        # A MongoDB reporting failure must not crash the scheduler worker.
+        pass
+
+
 async def safe_delete(client, chat_id, message_id):
     while True:
         try:
             await client.delete_messages(chat_id, message_id)
-            database.finish_scheduled_message(chat_id, message_id, "deleted")
+            await _finish_delete(chat_id, message_id, "deleted")
             return True
         except FloodWait as fw:
             await sleep_flood(fw.value)
         except DELETE_IGNORED_ERRORS as err:
-            database.finish_scheduled_message(chat_id, message_id, "skipped", str(err))
+            await _finish_delete(chat_id, message_id, "skipped", str(err))
             return False
         except Exception as err:
-            database.finish_scheduled_message(chat_id, message_id, "failed", str(err))
+            await _finish_delete(chat_id, message_id, "failed", str(err))
             return False
 
 
@@ -100,7 +103,10 @@ async def forward_with_flood(message, chat_id):
         except FloodWait as fw:
             await sleep_flood(fw.value)
         except BLOCK_ERRORS:
-            database.remove_user(chat_id)
+            try:
+                await asyncio.to_thread(database.remove_user, chat_id)
+            except Exception:
+                pass
             return "blocked_removed"
         except CHAT_ERRORS:
             return "forbidden"
@@ -176,22 +182,12 @@ async def is_chat_admin(client, chat_id, user_id):
 def settings_keyboard(chat_id, enabled):
     toggle = "Disable 📴" if enabled else "Enable ✅"
     action = "off" if enabled else "on"
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(toggle, callback_data=f"set:{chat_id}:{action}")],
-            [
-                InlineKeyboardButton("15s", callback_data=f"delay:{chat_id}:15"),
-                InlineKeyboardButton("30s", callback_data=f"delay:{chat_id}:30"),
-                InlineKeyboardButton("1m", callback_data=f"delay:{chat_id}:60"),
-            ],
-            [
-                InlineKeyboardButton("5m", callback_data=f"delay:{chat_id}:300"),
-                InlineKeyboardButton("30m", callback_data=f"delay:{chat_id}:1800"),
-                InlineKeyboardButton("1h Max", callback_data=f"delay:{chat_id}:3600"),
-            ],
-            [InlineKeyboardButton("Help 📘", callback_data=f"chathelp:{chat_id}"), InlineKeyboardButton("Refresh 🔄", callback_data=f"settings:{chat_id}")],
-        ]
-    )
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(toggle, callback_data=f"set:{chat_id}:{action}")],
+        [InlineKeyboardButton("15s", callback_data=f"delay:{chat_id}:15"), InlineKeyboardButton("30s", callback_data=f"delay:{chat_id}:30"), InlineKeyboardButton("1m", callback_data=f"delay:{chat_id}:60")],
+        [InlineKeyboardButton("5m", callback_data=f"delay:{chat_id}:300"), InlineKeyboardButton("30m", callback_data=f"delay:{chat_id}:1800"), InlineKeyboardButton("1h Max", callback_data=f"delay:{chat_id}:3600")],
+        [InlineKeyboardButton("Help 📘", callback_data=f"chathelp:{chat_id}"), InlineKeyboardButton("Refresh 🔄", callback_data=f"settings:{chat_id}")],
+    ])
 
 
 def start_keyboard(fsubs=None):
@@ -226,40 +222,24 @@ def back_home_keyboard(is_owner=False):
 
 
 def home_text():
-    return (
-        "**👋 Welcome to MN Auto Delete Bot**\n\n"
-        "Manage auto-delete timers with MongoDB persistence, rich buttons, force-sub, broadcasts, and restart-safe schedules.\n\n"
-        "Default mode is safe: no chat deletes anything until its admin enables auto-delete."
-    )
+    return ("**👋 Welcome to MN Auto Delete Bot**\n\n"
+            "Manage auto-delete timers with MongoDB persistence, rich buttons, force-sub, broadcasts, and restart-safe schedules.\n\n"
+            "Default mode is safe: no chat deletes anything until its admin enables auto-delete.")
 
 
 def commands_text():
-    return (
-        "**📚 Commands**\n\n"
-        "**Group/Channel Admin**\n"
-        "• `/settings` - open settings UI\n"
-        "• `/setdelete 30s` - set delete time\n"
-        "• `/setdelete off` - disable auto-delete\n"
-        "• `/deleteon` / `/deleteoff` - quick toggle\n\n"
-        "**Owner PM**\n"
-        "• `/admin` - owner panel\n"
-        "• `/broadcast` - reply and forward everywhere\n"
-        "• `/addfsub`, `/delfsub`, `/fsubs` - force-sub manager"
-    )
+    return ("**📚 Commands**\n\n**Group/Channel Admin**\n"
+            "• `/settings` - open settings UI\n• `/setdelete 30s` - set delete time\n"
+            "• `/setdelete off` - disable auto-delete\n• `/deleteon` / `/deleteoff` - quick toggle\n\n"
+            "**Owner PM**\n• `/admin` - owner panel\n• `/broadcast` - reply and forward everywhere\n"
+            "• `/addfsub`, `/delfsub`, `/fsubs` - force-sub manager")
 
 
 def features_text():
-    return (
-        "**✨ Features**\n\n"
-        "• Per-group/channel custom timers\n"
-        "• Max delete time: 1 hour\n"
-        "• MongoDB restart recovery\n"
-        "• Proper FloodWait handling\n"
-        "• Multiple force-sub chats\n"
-        "• Forward-method broadcasts\n"
-        "• Blocked PM users removed from DB\n"
-        "• Hourly group notice replaces the previous notice"
-    )
+    return ("**✨ Features**\n\n• Per-group/channel custom timers\n• Max delete time: 1 hour\n"
+            "• MongoDB restart recovery\n• Proper FloodWait handling\n• Multiple force-sub chats\n"
+            "• Forward-method broadcasts\n• Blocked PM users removed from DB\n"
+            "• Hourly group notice replaces the previous notice")
 
 
 def credits_text():
@@ -269,22 +249,13 @@ def credits_text():
 def settings_text(chat, settings):
     state = "Enabled ✅" if settings.get("enabled") else "Disabled 📴"
     delay = human_time(settings.get("delete_delay", 0))
-    return (
-        f"**🛠 Auto Delete Settings**\n\n"
-        f"**Chat:** {chat.title or chat.id}\n"
-        f"**ID:** `{chat.id}`\n"
-        f"**Status:** {state}\n"
-        f"**Delete Time:** `{delay}`\n"
-        f"**Limit:** `1 hour max`\n\n"
-        "Use buttons below or `/setdelete 30s`, `/setdelete 5m`, `/setdelete 1h`, `/setdelete off`."
-    )
+    return (f"**🛠 Auto Delete Settings**\n\n**Chat:** {chat.title or chat.id}\n"
+            f"**ID:** `{chat.id}`\n**Status:** {state}\n**Delete Time:** `{delay}`\n"
+            "**Limit:** `1 hour max`\n\nUse buttons below or `/setdelete 30s`, `/setdelete 5m`, `/setdelete 1h`, `/setdelete off`.")
 
 
 def chat_help_text():
-    return (
-        "**📘 Auto Delete Help**\n\n"
-        "Only group/channel owners and admins can change settings.\n"
-        "Allowed units: seconds (`s`), minutes (`m`), hours (`h`).\n"
-        "Maximum allowed auto-delete time is **1 hour**.\n\n"
-        "Examples: `/setdelete 15s`, `/setdelete 5m`, `/setdelete 1h`, `/setdelete off`."
-    )
+    return ("**📘 Auto Delete Help**\n\nOnly group/channel owners and admins can change settings.\n"
+            "Allowed units: seconds (`s`), minutes (`m`), hours (`h`).\n"
+            "Maximum allowed auto-delete time is **1 hour**.\n\n"
+            "Examples: `/setdelete 15s`, `/setdelete 5m`, `/setdelete 1h`, `/setdelete off`.")
