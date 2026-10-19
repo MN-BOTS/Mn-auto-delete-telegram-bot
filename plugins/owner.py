@@ -217,6 +217,16 @@ async def list_fsub_cmd(client, message):
         await reply_reliably(client, message, "Could not load force-sub chats. Check Koyeb logs.")
 
 
+# Results from forward_with_flood that cause the target to be removed from the DB.
+REMOVE_ON = {"blocked_removed", "forbidden", "failed"}
+
+
+def purge_target(target_id):
+    """Delete a failed broadcast target from both users and chats collections."""
+    database.users.delete_one({"_id": target_id})
+    database.chats.delete_one({"_id": target_id})
+
+
 @Client.on_message(filters.private & owner_filter & filters.command("broadcast"))
 async def broadcast_cmd(client, message):
     log.info("Owner command /broadcast received from user_id=%s", message.from_user.id)
@@ -233,10 +243,16 @@ async def broadcast_cmd(client, message):
         if not targets:
             return await reply_reliably(client, message, "No broadcast targets found yet.")
         status = await reply_reliably(client, message, f"Broadcast started to `{len(targets)}` targets...")
-        results = {"sent": 0, "blocked_removed": 0, "forbidden": 0, "failed": 0}
+        results = {"sent": 0, "blocked_removed": 0, "forbidden": 0, "failed": 0, "removed": 0}
         for target in targets:
             result = await forward_with_flood(message.reply_to_message, target)
             results[result] = results.get(result, 0) + 1
+            if result in REMOVE_ON:
+                try:
+                    await db_call(purge_target, target)
+                    results["removed"] += 1
+                except Exception:
+                    log.exception("Could not remove target %s from DB", target)
             await asyncio.sleep(BROADCAST.SLEEP)
         await db_call(database.broadcasts.insert_one, {
             "from_user": message.from_user.id,
@@ -248,7 +264,8 @@ async def broadcast_cmd(client, message):
         text = (
             "**Broadcast completed ✅**\n\n"
             f"Sent: `{results['sent']}`\nBlocked/deleted PM users removed: `{results['blocked_removed']}`\n"
-            f"Forbidden chats: `{results['forbidden']}`\nFailed: `{results['failed']}`"
+            f"Forbidden chats: `{results['forbidden']}`\nFailed: `{results['failed']}`\n"
+            f"Removed from DB: `{results['removed']}`"
         )
         if status:
             try:
