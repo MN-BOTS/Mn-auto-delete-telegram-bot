@@ -14,5 +14,3 @@ node_modules/
 __pycache__/
 *.pyc
 .DS_Store
-bot.py
-README.md
