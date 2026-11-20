@@ -110,7 +110,7 @@ class MN_Bot(Client):
             BotCommand("deleteoff", "Disable auto-delete in this chat"),
             BotCommand("help", "Show help and credits"),
             BotCommand("admin", "Owner management panel"),
-            BotCommand("broadcast", "Owner: forward a replied message everywhere"),
+            BotCommand("broadcast", "Owner: copy a replied message everywhere"),
             BotCommand("addfsub", "Owner: add force-sub chat"),
             BotCommand("delfsub", "Owner: remove force-sub chat"),
             BotCommand("fsubs", "Owner: list force-sub chats"),

@@ -9,7 +9,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import database
 
 OWNER_STATUSES = {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR}
-BLOCK_ERRORS = (UserIsBlocked, InputUserDeactivated, PeerIdInvalid)
+BLOCK_ERRORS = (UserIsBlocked,)
 CHAT_ERRORS = (ChatWriteForbidden, ChannelPrivate, ChatAdminRequired)
 DELETE_IGNORED_ERRORS = (MessageDeleteForbidden, MessageIdInvalid)
 EDIT_IGNORED_ERRORS = (MessageNotModified, MessageIdInvalid)
@@ -95,22 +95,26 @@ async def safe_delete_plain(client, chat_id, message_id):
             return False
 
 
-async def forward_with_flood(message, chat_id):
+async def copy_broadcast_with_flood(message, chat_id):
+    """Copy a replied message, preserving text formatting, media and inline buttons."""
     while True:
         try:
-            await message.forward(chat_id)
+            await message.copy(chat_id)
             return "sent"
         except FloodWait as fw:
             await sleep_flood(fw.value)
         except BLOCK_ERRORS:
+            # Only remove PM users who cannot receive messages anymore.
             try:
                 await asyncio.to_thread(database.remove_user, chat_id)
             except Exception:
                 pass
             return "blocked_removed"
         except CHAT_ERRORS:
+            # Forbidden group/channel targets stay in the database for recovery.
             return "forbidden"
         except Exception:
+            # Temporary or unknown failures must not erase known recipients.
             return "failed"
 
 
@@ -231,14 +235,14 @@ def commands_text():
     return ("**📚 Commands**\n\n**Group/Channel Admin**\n"
             "• `/settings` - open settings UI\n• `/setdelete 30s` - set delete time\n"
             "• `/setdelete off` - disable auto-delete\n• `/deleteon` / `/deleteoff` - quick toggle\n\n"
-            "**Owner PM**\n• `/admin` - owner panel\n• `/broadcast` - reply and forward everywhere\n"
+            "**Owner PM**\n• `/admin` - owner panel\n• `/broadcast` - reply and broadcast everywhere\n"
             "• `/addfsub`, `/delfsub`, `/fsubs` - force-sub manager")
 
 
 def features_text():
     return ("**✨ Features**\n\n• Per-group/channel custom timers\n• Max delete time: 1 hour\n"
             "• MongoDB restart recovery\n• Proper FloodWait handling\n• Multiple force-sub chats\n"
-            "• Forward-method broadcasts\n• Blocked PM users removed from DB\n"
+            "• Copy broadcasts preserve formatting, media, and buttons\n• Blocked PM users removed from DB\n"
             "• Hourly group notice replaces the previous notice")
 
 

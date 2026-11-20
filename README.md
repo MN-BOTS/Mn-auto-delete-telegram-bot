@@ -18,7 +18,7 @@ A MongoDB-backed Telegram auto-delete bot built with Pyrogram/pyrotgfork. Every 
 - ✅ **Multiple force-sub chats** with owner commands to add/remove/list requirements.
 - ✅ **Rich dynamic UI** with inline callbacks for start menus, settings, help, owner panels, source links, and force-sub verification.
 - ✅ **Owner management panel** with stats for users, chats, enabled chats, force-sub chats, and pending delete jobs.
-- ✅ **Forward-method broadcast** to bot PM users, groups, and channels.
+- ✅ **Copy-based broadcast** to bot PM users, groups, and channels.
 - ✅ **Blocked/deleted PM cleanup:** blocked users are automatically removed from MongoDB during broadcast.
 - ✅ Hourly group notice system that deletes the previous notice before sending the new one.
 - ✅ Automatic Telegram command registration on startup.
@@ -37,7 +37,7 @@ A MongoDB-backed Telegram auto-delete bot built with Pyrogram/pyrotgfork. Every 
 | `MONGO_URI` | ✅ | MongoDB connection URI | `mongodb+srv://user:pass@cluster/db` |
 | `DATABASE_NAME` | ❌ | MongoDB database name | `mn_auto_delete` |
 | `PORT` | ❌ | Flask health-check port | `8000` |
-| `BROADCAST_SLEEP` | ❌ | Small delay between broadcast forwards | `0.05` |
+| `BROADCAST_SLEEP` | ❌ | Small delay between broadcast copies | `0.05` |
 | `NOTICE_INTERVAL` | ❌ | Group notice interval in seconds; defaults to hourly | `3600` |
 | `NOTICE_TEXT` | ❌ | Text sent to all known groups every notice interval | `Use /settings to manage me` |
 
@@ -69,7 +69,7 @@ Use these in the bot PM from the configured `OWNER` account:
 | Command | Description |
 |---|---|
 | `/admin` or `/stats` | Open the owner management panel. |
-| `/broadcast` | Reply to any message and broadcast it using Telegram **forward**. |
+| `/broadcast` | Reply to any message and broadcast it using Telegram copy (preserving formatting, media and inline buttons). |
 | `/addfsub <chat_id> [invite_link]` | Add a required force-sub chat. |
 | `/delfsub <chat_id>` | Remove a force-sub chat. |
 | `/fsubs` | List all configured force-sub chats. |

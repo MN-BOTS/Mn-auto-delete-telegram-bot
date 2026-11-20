@@ -7,7 +7,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import OWNER, BROADCAST
 import database
-from utils import forward_with_flood, REPO_URL, DEV_URL, safe_callback_answer
+from utils import copy_broadcast_with_flood, REPO_URL, DEV_URL, safe_callback_answer
 
 log = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ async def owner_callbacks(client, query):
             text = (
                 "**📣 Broadcast Help**\n\n"
                 "Reply to the message you want to broadcast, then send `/broadcast`. "
-                "The bot forwards it to saved bot users and known groups/channels."
+                "The bot copies it to saved bot users and known groups/channels. Formatting, media and inline buttons are preserved."
             )
             keyboard = owner_back_keyboard()
         else:
@@ -217,14 +217,13 @@ async def list_fsub_cmd(client, message):
         await reply_reliably(client, message, "Could not load force-sub chats. Check Koyeb logs.")
 
 
-# Results from forward_with_flood that cause the target to be removed from the DB.
-REMOVE_ON = {"blocked_removed", "forbidden", "failed"}
+# Broadcast cleanup is intentionally conservative: only blocked/deactivated PM users
+# are removed. Forbidden or temporary failures keep their DB records.
+REMOVE_ON = {"blocked_removed"}
 
 
-def purge_target(target_id):
-    """Delete a failed broadcast target from both users and chats collections."""
-    database.users.delete_one({"_id": target_id})
-    database.chats.delete_one({"_id": target_id})
+def purge_blocked_user(user_id):
+    database.users.delete_one({"_id": user_id})
 
 
 @Client.on_message(filters.private & owner_filter & filters.command("broadcast"))
@@ -245,11 +244,11 @@ async def broadcast_cmd(client, message):
         status = await reply_reliably(client, message, f"Broadcast started to `{len(targets)}` targets...")
         results = {"sent": 0, "blocked_removed": 0, "forbidden": 0, "failed": 0, "removed": 0}
         for target in targets:
-            result = await forward_with_flood(message.reply_to_message, target)
+            result = await copy_broadcast_with_flood(message.reply_to_message, target)
             results[result] = results.get(result, 0) + 1
             if result in REMOVE_ON:
                 try:
-                    await db_call(purge_target, target)
+                    await db_call(purge_blocked_user, target)
                     results["removed"] += 1
                 except Exception:
                     log.exception("Could not remove target %s from DB", target)
@@ -263,7 +262,7 @@ async def broadcast_cmd(client, message):
         })
         text = (
             "**Broadcast completed ✅**\n\n"
-            f"Sent: `{results['sent']}`\nBlocked/deleted PM users removed: `{results['blocked_removed']}`\n"
+            f"Sent: `{results['sent']}`\nBlocked PM users removed: `{results['blocked_removed']}`\n"
             f"Forbidden chats: `{results['forbidden']}`\nFailed: `{results['failed']}`\n"
             f"Removed from DB: `{results['removed']}`"
         )
