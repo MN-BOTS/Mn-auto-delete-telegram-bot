@@ -29,6 +29,11 @@ async def db_call(func, *args, **kwargs):
 async def can_manage(client, message):
     if message.from_user and message.from_user.id == OWNER.ID:
         return True
+    # Channel posts are authored by the channel itself; Telegram only permits
+    # channel admins to publish them. Do not reject channel settings commands
+    # because channel posts have no from_user. Callback actions still verify admins.
+    if str(message.chat.type).upper().endswith("CHANNEL"):
+        return True
     user_id = getattr(message.from_user, "id", None)
     return await is_chat_admin(client, message.chat.id, user_id)
 
@@ -79,7 +84,7 @@ async def set_delete_cmd(client, message):
         settings = await db_call(
             database.set_chat_settings,
             message.chat,
-            message.from_user.id,
+            getattr(message.from_user, "id", None),
             enabled=seconds > 0,
             delete_delay=seconds,
         )
@@ -104,7 +109,7 @@ async def delete_on_cmd(client, message):
         settings = await db_call(
             database.set_chat_settings,
             message.chat,
-            message.from_user.id,
+            getattr(message.from_user, "id", None),
             enabled=True,
             delete_delay=delay,
         )
@@ -126,7 +131,7 @@ async def delete_off_cmd(client, message):
         await db_call(
             database.set_chat_settings,
             message.chat,
-            message.from_user.id,
+            getattr(message.from_user, "id", None),
             enabled=False,
         )
         await safe_reply(

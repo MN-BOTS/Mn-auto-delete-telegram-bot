@@ -1,0 +1,18 @@
+# Secrets & Environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.keystore
+local.properties
+
+# Build & Cache
+build/
+.gradle/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+bot.py
+README.md
